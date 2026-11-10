@@ -10,22 +10,97 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
+import sys
+import urllib.parse
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Local secrets live in hi_website/.env (not uploaded). On Vercel the dashboard
+# injects the same names, and those already-set values are left as they are.
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+if load_dotenv is not None:
+    load_dotenv(BASE_DIR / ".env")
+    load_dotenv(BASE_DIR / ".env.local")
+
+# Vercel sets VERCEL=1 on every deployment. Locally this stays off.
+ON_VERCEL = os.environ.get("VERCEL") == "1"
+
+
+def _split_env(name, default=""):
+    """Comma-separated environment variable, as a list of non-empty pieces."""
+    return [
+        part.strip()
+        for part in os.environ.get(name, default).split(",")
+        if part.strip()
+    ]
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-7da)$jwqyy67dgdm_^*l3)%@2i(c64i^1_xa$!q@)k+xt-4*-b'
+# On Vercel, set DJANGO_SECRET_KEY in the project environment variables.
+# collectstatic and migrate run during the build and do not need the real key.
+# The running site does. The fallback is only for your own computer and that build step.
+def _vercel_build_command():
+    argv0 = Path(sys.argv[0]).name if sys.argv else ""
+    if argv0 in {"manage.py", "django-admin", "django-admin.py"}:
+        return True
+    return any(arg in {"collectstatic", "migrate"} for arg in sys.argv)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
 
-ALLOWED_HOSTS = []
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
+if not SECRET_KEY:
+    if ON_VERCEL and not _vercel_build_command():
+        raise ImproperlyConfigured(
+            "Set DJANGO_SECRET_KEY in the Vercel project's environment variables."
+        )
+    SECRET_KEY = "django-insecure-7da)$jwqyy67dgdm_^*l3)%@2i(c64i^1_xa$!q@)k+xt-4*-b"
+
+# Locally the site shows error pages. On Vercel it does not, unless DJANGO_DEBUG=true.
+_debug_default = "False" if ON_VERCEL else "True"
+DEBUG = os.environ.get("DJANGO_DEBUG", _debug_default).lower() in {"1", "true", "yes", "on"}
+
+ALLOWED_HOSTS = _split_env("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost")
+if ON_VERCEL and ".vercel.app" not in ALLOWED_HOSTS:
+    # Leading dot: any deployment host ending in vercel.app.
+    ALLOWED_HOSTS.append(".vercel.app")
+# The production site is served on this host as well as *.vercel.app.
+if ON_VERCEL and "hi.jbart.co" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("hi.jbart.co")
+
+# Vercel tells us this deployment's hostname. Trust that host and its https origin.
+_vercel_hosts = []
+for _host_var in ("VERCEL_URL", "VERCEL_BRANCH_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
+    _host = os.environ.get(_host_var, "").strip()
+    if _host and _host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_host)
+    if _host:
+        _vercel_hosts.append(_host)
+
+CSRF_TRUSTED_ORIGINS = _split_env(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    "https://*.vercel.app,https://hi.jbart.co" if ON_VERCEL else "",
+)
+for _host in _vercel_hosts:
+    _origin = f"https://{_host}"
+    if _origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_origin)
+
+# Vercel terminates HTTPS in front of Django. These headers make request.is_secure() true.
+if ON_VERCEL:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    USE_X_FORWARDED_HOST = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 
 # Application definition
@@ -72,13 +147,47 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
+#
+# Locally there is no DATABASE_URL, so Django uses the SQLite file.
+# On Vercel, add a Postgres database. Vercel then sets DATABASE_URL.
+# SQLite cannot store form submissions there: the function filesystem is not permanent.
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+if os.environ.get("DATABASE_URL"):
+    _db = urllib.parse.urlparse(os.environ["DATABASE_URL"])
+    if _db.scheme not in {"postgres", "postgresql"}:
+        raise ImproperlyConfigured(
+            "DATABASE_URL must start with postgres:// or postgresql://."
+        )
+    _query = urllib.parse.parse_qs(_db.query)
+    if "sslmode" in _query:
+        _sslmode = _query["sslmode"][-1]
+    elif (_db.hostname or "") in {"localhost", "127.0.0.1"}:
+        _sslmode = "disable"
+    else:
+        _sslmode = "require"
+    _options = {"sslmode": _sslmode}
+    if "channel_binding" in _query:
+        _options["channel_binding"] = _query["channel_binding"][-1]
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": urllib.parse.unquote(_db.path.lstrip("/")),
+            "USER": urllib.parse.unquote(_db.username or ""),
+            "PASSWORD": urllib.parse.unquote(_db.password or ""),
+            "HOST": _db.hostname or "",
+            "PORT": str(_db.port or ""),
+            # Do not keep a connection open between serverless invocations.
+            "CONN_MAX_AGE": 0,
+            "OPTIONS": _options,
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 
 # Password validation
@@ -111,11 +220,23 @@ USE_I18N = True
 
 USE_TZ = True
 
+# Matches the primary keys already created in front_page/migrations.
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
-STATIC_URL = 'static/'
+# Leading slash so /sign/ and /thanks/ still load CSS from /static/, not /sign/static/.
+STATIC_URL = "/static/"
+
+# Vercel runs collectstatic and serves this folder from its CDN.
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Address of the chatbot server (Chatbot/api.py). The chat panel on Page 3 calls it
+# directly from the browser. Override with CHATBOT_API_URL once that server is online.
+# The chatbot is not deployed with this site: it needs Ollama running beside it.
+CHATBOT_API_URL = os.environ.get("CHATBOT_API_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
 # Email

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.shortcuts import render, redirect
 from .forms import SignatureForm
 from .models import Subscriber
@@ -5,7 +6,9 @@ from .models import Subscriber
 
 def home(request):
     """ The front page of the website """
-    return render(request, 'Front_Page.html')
+    return render(request, 'Front_Page.html', {
+        'chatbot_api_url': settings.CHATBOT_API_URL,
+    })
 
 
 def sign(request):

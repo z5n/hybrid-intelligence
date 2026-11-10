@@ -355,7 +355,7 @@
 
   <!-- Page 3: the chat panel. It lives in the Chatbot folder, so it can be used on other websites too.
        data-api = the address of the chatbot server (api.py), data-target = the box on Page 3 it goes in. -->
-  <script src="{% static 'chat-widget.js' %}" data-api="http://127.0.0.1:8000" data-target="#hi-chat"></script>
+  <script src="{% static 'chat-widget.js' %}" data-api="{{ chatbot_api_url }}" data-target="#hi-chat"></script>
 
   <!-- Page 4: the co-authors pop-up. The list first, because the pop-up script uses it. -->
   <script src="{% static 'Page 4/JS/coauthors_list.js' %}"></script>

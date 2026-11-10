@@ -9,3 +9,39 @@ Thumbs.db
 
 # Editor settings
 .vscode/
+
+# Mac DS_Store files
+*.DS_Store
+
+# Secrets. Copy .env.example to .env and fill it in. Never upload it.
+.env
+.env.local
+
+# Vercel
+.vercel
+
+# Python cache, anywhere in the repo
+__pycache__/
+*.pyc
+
+# Virtual environments. Recreate the chatbot one with the README steps.
+.venv/
+
+# Django database. It holds visitors' names and email addresses.
+# Made with: python manage.py migrate
+hi_website/db.sqlite3
+
+# Collected static files (built on deploy)
+hi_website/staticfiles/
+
+# Chatbot search index (rebuilt with: python ingest.py)
+# and data/preview.txt (made by: python ingest.py --preview)
+Chatbot/data/
+
+# Error log made by api.py
+Chatbot/logs/
+
+# Research papers (copyright). Only the list and the titles file are uploaded.
+Chatbot/papers/*
+!Chatbot/papers/README.md
+!Chatbot/papers/titles.txt

@@ -1,0 +1,16 @@
+.venv/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.DS_Store
+**/*.sqlite3
+hi_website/staticfiles/
+Chatbot/data/
+Chatbot/papers/
+Chatbot/logs/
+Chatbot/tests/results/
+Chatbot/.env
+.env
+.env.local
+hi_website/.env
+hi_website/.env.local

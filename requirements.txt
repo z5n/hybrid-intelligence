@@ -1,0 +1,6 @@
+# Django website. Vercel installs this file from the repository root.
+# The chatbot's packages stay in Chatbot/requirements.txt and are not part of this deploy.
+
+Django>=6.1,<6.2
+psycopg[binary]>=3.2
+python-dotenv>=1.0
