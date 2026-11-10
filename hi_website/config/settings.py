@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import secrets
 import sys
 import urllib.parse
 from pathlib import Path
@@ -49,21 +50,20 @@ def _split_env(name, default=""):
 
 # On Vercel, set DJANGO_SECRET_KEY in the project environment variables.
 # collectstatic and migrate run during the build and do not need the real key.
-# The running site does. The fallback is only for your own computer and that build step.
 def _vercel_build_command():
-    argv0 = Path(sys.argv[0]).name if sys.argv else ""
-    if argv0 in {"manage.py", "django-admin", "django-admin.py"}:
-        return True
     return any(arg in {"collectstatic", "migrate"} for arg in sys.argv)
 
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
 if not SECRET_KEY:
-    if ON_VERCEL and not _vercel_build_command():
+    if ON_VERCEL and _vercel_build_command():
+        # Throwaway key for that build step only. It is not a stored secret.
+        SECRET_KEY = secrets.token_urlsafe(50)
+    else:
         raise ImproperlyConfigured(
-            "Set DJANGO_SECRET_KEY in the Vercel project's environment variables."
+            "Set DJANGO_SECRET_KEY in the environment. "
+            "Locally that is hi_website/.env. On Vercel, set it in the project's environment variables."
         )
-    SECRET_KEY = "django-insecure-7da)$jwqyy67dgdm_^*l3)%@2i(c64i^1_xa$!q@)k+xt-4*-b"
 
 # Locally the site shows error pages. On Vercel it does not, unless DJANGO_DEBUG=true.
 _debug_default = "False" if ON_VERCEL else "True"
